@@ -126,8 +126,6 @@ require('claude-inline').setup({
     command = 'claude',         -- Claude CLI command
     model = nil,                -- Model to use (nil = Claude's default)
     timeout = 30000,            -- Timeout in milliseconds
-    max_tokens = 4096,          -- Maximum tokens in response
-    temperature = 0.7,          -- Temperature for generation
   },
 
   -- Buffer operation settings
@@ -166,11 +164,10 @@ require('claude-inline').setup({
 require('claude-inline').setup({
   claude = {
     command = 'claude',
-    model = 'claude-3-sonnet-20240229',  -- Specific model
+    model = 'sonnet',                      -- Use model alias like 'sonnet' or 'opus'
     timeout = 60000,                      -- Longer timeout for complex edits
-    temperature = 0.5,                    -- Lower temperature for more deterministic results
 
-    -- Custom system prompt
+    -- Custom system prompt (appends to Claude's default)
     system_prompt = [[You are an expert programmer.
 When editing code, maintain the existing style and conventions.
 Be concise and only return the modified code.]],

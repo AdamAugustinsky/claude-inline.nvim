@@ -36,9 +36,13 @@ end
 
 --- Build command arguments for Claude CLI
 ---@param config table Claude configuration
+---@param prompt string The full prompt to send
 ---@return string[] args Command arguments
-local function build_command_args(config)
+local function build_command_args(config, prompt)
   local args = {}
+
+  -- Use --print mode for non-interactive output
+  table.insert(args, '--print')
 
   -- Add model if specified
   if config.model then
@@ -46,23 +50,14 @@ local function build_command_args(config)
     table.insert(args, config.model)
   end
 
-  -- Add max tokens if specified
-  if config.max_tokens then
-    table.insert(args, '--max-tokens')
-    table.insert(args, tostring(config.max_tokens))
-  end
-
-  -- Add temperature if specified
-  if config.temperature then
-    table.insert(args, '--temperature')
-    table.insert(args, tostring(config.temperature))
-  end
-
-  -- Add system prompt
+  -- Append system prompt to default if specified
   if config.system_prompt then
-    table.insert(args, '--system')
+    table.insert(args, '--append-system-prompt')
     table.insert(args, config.system_prompt)
   end
+
+  -- Add the prompt as the last argument
+  table.insert(args, prompt)
 
   return args
 end
@@ -76,26 +71,15 @@ function M.process(context, callback)
   -- Build the full prompt
   local prompt = build_prompt(context)
 
-  -- Build command and arguments
+  -- Build command and arguments (passing prompt to get full args)
   local cmd = config.command
-  local args = build_command_args(config)
-
-  -- Create temporary file for the prompt (to handle multi-line input safely)
-  local tmpfile = vim.fn.tempname()
-  local file = io.open(tmpfile, 'w')
-  if not file then
-    callback(false, 'Failed to create temporary file')
-    return
-  end
-
-  file:write(prompt)
-  file:close()
+  local args = build_command_args(config, prompt)
 
   -- Prepare output buffer
   local output = {}
   local error_output = {}
 
-  -- Start the job
+  -- Start the job with command and arguments
   M._state.job_id = vim.fn.jobstart({cmd, unpack(args)}, {
     stdout_buffered = true,
     stderr_buffered = true,
@@ -120,9 +104,6 @@ function M.process(context, callback)
     on_exit = function(_, exit_code)
       M._state.job_id = nil
 
-      -- Clean up temp file
-      vim.fn.delete(tmpfile)
-
       if exit_code == 0 then
         local result = table.concat(output, '\n')
         -- Extract only the code portion (remove any explanation)
@@ -141,13 +122,8 @@ function M.process(context, callback)
   -- Check if job started successfully
   if M._state.job_id <= 0 then
     callback(false, 'Failed to start Claude CLI')
-    vim.fn.delete(tmpfile)
     return
   end
-
-  -- Send the prompt via stdin
-  vim.fn.chansend(M._state.job_id, prompt)
-  vim.fn.chanclose(M._state.job_id, 'stdin')
 
   -- Set up timeout
   if config.timeout and config.timeout > 0 then
@@ -166,50 +142,26 @@ end
 ---@param response string The full response from Claude
 ---@return string code The extracted code
 function M.extract_code_from_response(response)
-  -- Remove markdown code blocks if present
-  local code = response
-
-  -- Check for code blocks with language specifier
-  local pattern = '```%w*\n(.-)\n```'
+  -- First try to extract code from markdown code blocks
+  -- Pattern for code blocks with language specifier (e.g., ```python)
+  local pattern = '```[%w_%-]*\n(.-)\n```'
   local extracted = response:match(pattern)
+
   if extracted then
-    code = extracted
-  else
-    -- Check for code blocks without language specifier
-    pattern = '```\n(.-)\n```'
-    extracted = response:match(pattern)
-    if extracted then
-      code = extracted
-    end
+    return extracted
   end
 
-  -- Remove any leading/trailing explanation text
-  -- Look for patterns that indicate explanatory text
-  local lines = vim.split(code, '\n', { plain = true })
-  local code_lines = {}
-  local in_code = false
+  -- Try code blocks without language specifier
+  pattern = '```\n(.-)\n```'
+  extracted = response:match(pattern)
 
-  for _, line in ipairs(lines) do
-    -- Skip lines that look like explanations
-    if not line:match('^Here') and
-       not line:match('^This') and
-       not line:match('^The') and
-       not line:match('^I[\'"]') and
-       not line:match('^Note:') and
-       not line:match('^Explanation:') then
-      -- Start collecting when we hit something that looks like code
-      if line:match('%S') or in_code then
-        in_code = true
-        table.insert(code_lines, line)
-      end
-    end
+  if extracted then
+    return extracted
   end
 
-  if #code_lines > 0 then
-    code = table.concat(code_lines, '\n')
-  end
-
-  return code
+  -- If no code blocks found, return the response as-is
+  -- (Claude might have returned just the code without markdown)
+  return response
 end
 
 --- Cancel any running Claude process

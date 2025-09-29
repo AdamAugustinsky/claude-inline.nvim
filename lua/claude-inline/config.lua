@@ -68,8 +68,6 @@ M.defaults = {
     command = 'claude',       -- Claude CLI command
     model = nil,              -- Model to use (nil = use Claude's default)
     timeout = 30000,          -- Timeout in milliseconds
-    max_tokens = 4096,        -- Maximum tokens in response
-    temperature = 0.7,        -- Temperature for generation
     system_prompt = [[You are an AI coding assistant. The user will provide you with selected code and an instruction.
 Your task is to modify the selected code according to the instruction.
 Return ONLY the modified code without any explanation, markdown formatting, or code blocks.
